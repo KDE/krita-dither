@@ -124,6 +124,117 @@ bool operator<(const QColor& c1, const QColor& c2)
     return false;
 }
 
+double ns(double a, double b)
+{
+    double c = a -b;
+    return c*c;
+}
+
+struct Genom {
+    std::vector<QColor> palette;
+    double error;
+    void computeError( const std::map<QColor, int>& colors2int )
+    {
+        this->error = 0.0;
+        for(std::map<QColor, int>::const_iterator it = colors2int.begin();
+            it != colors2int.end(); ++it)
+        {
+            double bestScore = -1.0;
+            // Find the best color in the palette
+            for( std::vector<QColor>::iterator it2 = palette.begin();
+                 it2 != palette.end(); ++it2)
+            {
+                double score = ns(
+                                  it->first.red(), it2->red())
+                                + ns(it->first.green(), it2->green() )
+                                + ns(it->first.blue(), it2->blue() );
+                if(score < bestScore or bestScore < 0.0)
+                {
+                    bestScore = score;
+                }
+            }
+            this->error += sqrt(bestScore) * it->second;
+        }
+    }
+};
+
+std::vector<QColor> optimizeColors( const std::map<QColor, int>& colors2int, int paletteSize )
+{
+    // Sort the colors, with luck it will help the genetic algorithm to eliminate very bad palette early
+    std::multimap<int, QColor> int2colors;
+    for( std::map<QColor, int>::const_iterator it = colors2int.begin();
+            it != colors2int.end(); ++it)
+    {
+        int2colors.insert( std::multimap<int, QColor>::value_type(-it->second, it->first) );
+    }
+    // Init the genom
+    kdDebug() << "Initialize the genom" << endl;
+    std::multimap<double, Genom> genoms;
+    for( std::multimap<int, QColor>::iterator it = int2colors.begin();
+         it != int2colors.end() ; )
+    {
+        Genom g;
+        while( g.palette.size() < (uint)paletteSize )
+        {
+            g.palette.push_back( it->second );
+            if( it != int2colors.end()) ++it;
+        }
+        g.computeError(colors2int);
+        genoms.insert( std::multimap<double, Genom>::value_type( g.error, g) );
+        kdDebug() << g.error << " " << genoms.size() << " out of " << (colors2int.size() / paletteSize) << endl;
+    }
+    if( genoms.size() & 1 )
+    { // Ensure the parity, as we kill half of the genoms
+        genoms.insert(  *genoms.begin() );
+    }
+    for(int iter = 0; iter < 100; iter++)
+    {
+        kdDebug() << "Iteration : " << iter << endl;
+        // Reproduction
+        int nbgenoms = 2 * genoms.size();
+        std::vector<Genom>parents;
+        for(std::multimap<double, Genom>::iterator it = genoms.begin(); it != genoms.end(); ++it)
+        {
+            parents.push_back( it->second );
+        }
+        while(genoms.size() <  nbgenoms)
+        {
+            Genom p1 = parents[(int)(parents.size() * (rand() / (double)RAND_MAX))];
+            Genom p2 = parents[(int)(parents.size() * (rand() / (double)RAND_MAX))];
+            Genom c1, c2;
+            int i = 0;
+            int middle = (int)(paletteSize * (rand() / (double)RAND_MAX));
+            for(; i < middle; i++)
+            {
+                c1.palette.push_back( p1.palette[i] );
+                c2.palette.push_back( p2.palette[i] );
+            }
+            for(; i < paletteSize; i++)
+            {
+                c1.palette.push_back( p2.palette[i] );
+                c2.palette.push_back( p1.palette[i] );
+            }
+            c1.computeError(colors2int);
+            c2.computeError(colors2int);
+            genoms.insert( std::multimap<double, Genom>::value_type( c1.error, c1) );
+            genoms.insert( std::multimap<double, Genom>::value_type( c2.error, c2) );
+        }
+        // Kill the bad genoms
+        std::multimap<double, Genom> newGenoms;
+        std::multimap<double, Genom>::iterator it = genoms.begin();
+        for(int i = 0; i < genoms.size() / 2; ++i, ++it)
+        {
+            newGenoms.insert( *it );
+        }
+        genoms = newGenoms;
+        kdDebug() << "Best shoot : " << genoms.begin()->first << endl;
+    }
+    
+    kdDebug() << "Optimization is finished" << endl;
+    kdDebug() << genoms.begin()->first << endl;
+    return genoms.begin()->second.palette;
+}
+
 void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst, 
                                    KisFilterConfiguration* config, const QRect& rect ) 
 {
@@ -148,8 +259,41 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
     quint8** colorPalette = new quint8*[paletteSize];
     switch(paletteType)
     {
+        default:
+        case 0:
+        {
+            kdDebug() << "Optimization" << endl;
+            QColor c;
+            std::map<QColor, int> colors2int;
+            KisRectIteratorPixel rectIt = src->createRectIterator(rect.x(), rect.y(), rect.width(), rect.height(), false);
+            while(not rectIt.isDone())
+            {
+                cs->toQColor( rectIt.oldRawData(), &c, (KisProfile*)0 );
+                c.setRgb( c.red() >> 3, c.green() >> 3, c.blue() >> 3 );
+                colors2int[ c ] += 1;
+                ++rectIt;
+            }
+            std::map<QColor, int> colors2intBis;
+            for( std::map<QColor, int>::iterator it = colors2int.begin();
+                    it != colors2int.end(); ++it)
+            {
+                QColor c = it->first;
+                c.setRgb( c.red() << 3, c.green() << 3, c.blue() << 3 );
+                colors2intBis[c] = it->second;
+            }
+            std::vector<QColor> colors = optimizeColors( colors2intBis, paletteSize );
+            
+            for(int i = 0; i < paletteSize; i++)
+            {
+                quint8* color = new quint8[ pixelSize ];
+                cs->fromQColor( colors[i], color, 0 );
+                colorPalette[i] = color;
+            }
+            break;
+        }
         case 1:
         {
+            kdDebug() << "Best colors (4bit)" << endl;
             QColor c;
             std::map<QColor, int> colors2int;
             KisRectIteratorPixel rectIt = src->createRectIterator(rect.x(), rect.y(), rect.width(), rect.height(), false);
@@ -178,6 +322,7 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
         }
         case 2:
         {
+            kdDebug() << "Most colors (4bit)" << endl;
             QColor c;
             std::map<QColor, int> colors2int;
             KisRectIteratorPixel rectIt = src->createRectIterator(rect.x(), rect.y(), rect.width(), rect.height(), false);
@@ -206,8 +351,8 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
             paletteSize = realPaletteSize;
             break;
         }
-        default:
         case 3:
+            kdDebug() << "Random" << endl;
             for(int i = 0; i < paletteSize; i++)
             {
                 QColor c( (int)(rand() * 255.0 / RAND_MAX), (int)(rand() * 255.0 / RAND_MAX), (int)(rand() * 255.0 / RAND_MAX) );
