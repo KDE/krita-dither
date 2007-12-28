@@ -158,6 +158,19 @@ struct Genom {
     }
 };
 
+inline double randf()
+{
+    return rand() / (double) RAND_MAX;
+}
+
+void mutate(Genom& g)
+{
+    int index = (int)( randf() * g.palette.size());
+    QColor c = g.palette[index];
+    c.setRgb( (0.5 - randf()) * 10 + c.red(), (0.5 - randf()) * 10 + c.green(), (0.5 - randf()) * 10 + c.blue() );
+    g.palette[index] = c;
+}
+
 std::vector<QColor> optimizeColors( const std::map<QColor, int>& colors2int, int paletteSize )
 {
     // Sort the colors, with luck it will help the genetic algorithm to eliminate very bad palette early
@@ -216,6 +229,9 @@ std::vector<QColor> optimizeColors( const std::map<QColor, int>& colors2int, int
                 c1.palette.push_back( p2.palette[i] );
                 c2.palette.push_back( p1.palette[i] );
             }
+            if( rand() >( RAND_MAX)/2) mutate(c1);
+            if( rand() <( RAND_MAX)/2) mutate(c2);
+                
             c1.computeError(colors2int);
             c2.computeError(colors2int);
             genoms.insert( std::multimap<double, Genom>::value_type( c1.error, c1) );
