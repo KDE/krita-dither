@@ -1,0 +1,8 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=Dither Filter
+Comment=Contract color area and expand transparent part of the image
+ServiceTypes=Krita/Filter
+Type=Service
+X-KDE-Library=kritaDither
+X-Krita-Version=2
