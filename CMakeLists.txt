@@ -1,6 +1,9 @@
 include_directories(${CMAKE_CURRENT_BINARY_DIR} )
 
-set(kritaDither_PART_SRCS Dither.cc  )
+set(kritaDither_PART_SRCS Dither.cc  DitherConfigurationWidget.cc)
+kde3_add_ui_files(kritaDither_PART_SRCS
+    DitherConfigurationBaseWidget.ui
+    )
 
 kde3_automoc(${kritaDither_PART_SRCS})
 

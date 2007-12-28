@@ -4,16 +4,15 @@
  *  Copyright (c) 2007 Cyrille Berger <cberger@cberger.net>
  *
  *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
+ *  it under the terms of the GNU Lesser General Public License as published by
+ *  the Free Software Foundation; version 2 of the License.
  *
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  GNU Lesser General Public License for more details.
  *
- *  You should have received a copy of the GNU General Public License
+ *  You should have received a copy of the GNU Lesser General Public License
  *  along with this program; if not, write to the Free Software
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
@@ -47,6 +46,10 @@
 #include <qpixmap.h>
 #include <qbitmap.h>
 #include <qpainter.h>
+#include <qcombobox.h>
+
+#include "DitherConfigurationWidget.h"
+#include "DitherConfigurationBaseWidget.h"
 
 typedef Q_UINT8 quint8;
 
@@ -80,8 +83,38 @@ KisDitherFilter::KisDitherFilter()
 {
 }
 
+KisFilterConfiguration* KisDitherFilter::configuration()
+{
+    KisFilterConfiguration* config = new KisFilterConfiguration(id().id(),1);
+    config->setProperty("paletteSize", 16);
+    config->setProperty("paletteType", 0);
+    return config;
+};
+
+KisFilterConfigWidget * KisDitherFilter::createConfigurationWidget(QWidget* parent, KisPaintDeviceSP /*dev*/)
+{
+    DitherConfigurationWidget* w = new DitherConfigurationWidget(parent, "");
+    Q_CHECK_PTR(w);
+    return w;
+}
+
+KisFilterConfiguration* KisDitherFilter::configuration(QWidget* nwidget)
+{
+    DitherConfigurationWidget* widget = (DitherConfigurationWidget*) nwidget;
+    if( widget == 0 )
+    {
+        return configuration();
+    } else {
+        DitherConfigurationBaseWidget* baseWidget = widget->widget();
+        KisFilterConfiguration* config = new KisFilterConfiguration(id().id(),1);
+        config->setProperty("paletteSize", baseWidget->paletteSize->value() );
+        config->setProperty("paletteType", baseWidget->paletteType->currentItem() );
+        return config;
+    }
+}
+
 void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst, 
-                                   KisFilterConfiguration* /*config*/, const QRect& rect ) 
+                                   KisFilterConfiguration* config, const QRect& rect ) 
 {
     Q_ASSERT(src != 0);
     Q_ASSERT(dst != 0);
@@ -90,6 +123,17 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
     KisColorSpace * cs = src->colorSpace();
     Q_INT32 pixelSize = cs->pixelSize();
     
+    QVariant value;
+    int paletteSize = 16;
+    if (config->getProperty("paletteSize", value))
+    {
+        paletteSize = value.toInt(0);
+    }
+    int paletteType = 0;
+    if (config->getProperty("paletteType", value))
+    {
+        paletteType = value.toInt(0);
+    }
 #if 0
     QColor c;
     QMap<QColor, int> m_values;
@@ -102,23 +146,22 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
       }
     }
 #endif
-    QValueList<QColor> qColorPalette;
-    for(int i = 0; i < 255; i++)
-    {
-        QColor c( (int)(rand() * 255.0 / RAND_MAX), (int)(rand() * 255.0 / RAND_MAX), (int)(rand() * 255.0 / RAND_MAX) );
-        qColorPalette.append( c );
-    }
-    
-    
-    // Apply palette
-    int paletteSize = qColorPalette.size();
     quint8** colorPalette = new quint8*[paletteSize];
-    for(int i = 0; i < paletteSize; i++)
+    switch(paletteType)
     {
-      quint8* color = new quint8[ pixelSize ];
-      cs->fromQColor( qColorPalette[i], color, 0 );
-      colorPalette[i] = color;
+        default:
+        case 0:
+            for(int i = 0; i < paletteSize; i++)
+            {
+                QColor c( (int)(rand() * 255.0 / RAND_MAX), (int)(rand() * 255.0 / RAND_MAX), (int)(rand() * 255.0 / RAND_MAX) );
+                quint8* color = new quint8[ pixelSize ];
+                cs->fromQColor( c, color, 0 );
+                colorPalette[i] = color;
+            }
+            break;
     }
+    
+    
     
     // Apply palette
     KisHLineIteratorPixel dstIt = dst->createHLineIterator(rect.x(), rect.y(), rect.width(), true );
