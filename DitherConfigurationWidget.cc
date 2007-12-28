@@ -32,7 +32,7 @@ DitherConfigurationWidget::DitherConfigurationWidget(QWidget * parent, const cha
     QGridLayout *widgetLayout = new QGridLayout(this, 1, 1);
     m_widget = new DitherConfigurationBaseWidget(this);
     widgetLayout -> addWidget(m_widget,0,0);
-    connect(m_widget->paletteType, SIGNAL(currentChanged(QListViewItem*)), SLOT(sigPleaseUpdatePreview()));
+    connect(m_widget->paletteType, SIGNAL(activated(int)), SIGNAL(sigPleaseUpdatePreview()));
     connect(m_widget->paletteSize, SIGNAL(valueChanged(int)), SIGNAL(sigPleaseUpdatePreview()));
 }
 

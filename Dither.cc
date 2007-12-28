@@ -113,6 +113,17 @@ KisFilterConfiguration* KisDitherFilter::configuration(QWidget* nwidget)
     }
 }
 
+bool operator<(const QColor& c1, const QColor& c2)
+{
+    if(c1.red() < c2.red()) return true;
+    else if(c1.red() > c2.red()) return false;
+    if(c1.green() < c2.green()) return true;
+    else if(c1.green() > c2.green()) return false;
+    if(c1.blue() < c2.blue()) return true;
+    else if(c1.blue() > c2.blue()) return false;
+    return false;
+}
+
 void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst, 
                                    KisFilterConfiguration* config, const QRect& rect ) 
 {
@@ -134,21 +145,37 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
     {
         paletteType = value.toInt(0);
     }
-#if 0
-    QColor c;
-    QMap<QColor, int> m_values;
-    {
-      KisRectIteratorPixel rectIt = src->createRectIterator(rect.x(), rect.y(), rect.width(), rect.height(), false);
-      while(not rectIt.isDone())
-      {
-        
-        ++rectIt;
-      }
-    }
-#endif
     quint8** colorPalette = new quint8*[paletteSize];
     switch(paletteType)
     {
+        case 1:
+        {
+            QColor c;
+            std::map<QColor, int> colors2int;
+            KisRectIteratorPixel rectIt = src->createRectIterator(rect.x(), rect.y(), rect.width(), rect.height(), false);
+            while(not rectIt.isDone())
+            {
+                cs->toQColor( rectIt.oldRawData(), &c, (KisProfile*)0 );
+                colors2int[ c ] += 1;
+                ++rectIt;
+            }
+            std::multimap<int, QColor> int2colors;
+            for( std::map<QColor, int>::iterator it = colors2int.begin();
+                 it != colors2int.end(); ++it)
+            {
+                int2colors.insert( std::multimap<int, QColor>::value_type(-it->second, it->first) );
+            }
+            int realPaletteSize = 0;
+            for( std::multimap<int , QColor>::iterator it = int2colors.begin();
+                 it != int2colors.end() and realPaletteSize < paletteSize; ++it, ++realPaletteSize)
+            {
+                quint8* color = new quint8[ pixelSize ];
+                cs->fromQColor( it->second, color, 0 );
+                colorPalette[realPaletteSize] = color;
+            }
+            paletteSize = realPaletteSize;
+            break;
+        }
         default:
         case 0:
             for(int i = 0; i < paletteSize; i++)
@@ -160,8 +187,6 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
             }
             break;
     }
-    
-    
     
     // Apply palette
     KisHLineIteratorPixel dstIt = dst->createHLineIterator(rect.x(), rect.y(), rect.width(), true );
