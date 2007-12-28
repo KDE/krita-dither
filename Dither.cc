@@ -176,8 +176,38 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
             paletteSize = realPaletteSize;
             break;
         }
+        case 2:
+        {
+            QColor c;
+            std::map<QColor, int> colors2int;
+            KisRectIteratorPixel rectIt = src->createRectIterator(rect.x(), rect.y(), rect.width(), rect.height(), false);
+            while(not rectIt.isDone())
+            {
+                cs->toQColor( rectIt.oldRawData(), &c, (KisProfile*)0 );
+                c.setRgb( c.red() >> 4, c.green() >> 4, c.blue() >> 4 );
+                colors2int[ c ] += 1;
+                ++rectIt;
+            }
+            std::multimap<int, QColor> int2colors;
+            for( std::map<QColor, int>::iterator it = colors2int.begin();
+                 it != colors2int.end(); ++it)
+            {
+                int2colors.insert( std::multimap<int, QColor>::value_type(-it->second, it->first) );
+            }
+            int realPaletteSize = 0;
+            for( std::multimap<int , QColor>::iterator it = int2colors.begin();
+                 it != int2colors.end() and realPaletteSize < paletteSize; ++it, ++realPaletteSize)
+            {
+                quint8* color = new quint8[ pixelSize ];
+                QColor c( it->second.red() << 4, it->second.green() << 4, it->second.blue() << 4 );
+                cs->fromQColor( c, color, 0 );
+                colorPalette[realPaletteSize] = color;
+            }
+            paletteSize = realPaletteSize;
+            break;
+        }
         default:
-        case 0:
+        case 3:
             for(int i = 0; i < paletteSize; i++)
             {
                 QColor c( (int)(rand() * 255.0 / RAND_MAX), (int)(rand() * 255.0 / RAND_MAX), (int)(rand() * 255.0 / RAND_MAX) );
