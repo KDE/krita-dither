@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <vector>
 
+#include <kapplication.h>
 #include <klocale.h>
 #include <kiconloader.h>
 #include <kinstance.h>
@@ -50,8 +51,6 @@
 
 #include "DitherConfigurationWidget.h"
 #include "DitherConfigurationBaseWidget.h"
-
-typedef Q_UINT8 quint8;
 
 typedef KGenericFactory<KritaDither> KritaDitherFactory;
 K_EXPORT_COMPONENT_FACTORY( kritaDither, KritaDitherFactory( "krita" ) )
@@ -163,15 +162,23 @@ inline double randf()
     return rand() / (double) RAND_MAX;
 }
 
+int mutateColor(int c)
+{
+    c = (int)((0.5 - randf()) * 10 + c);
+    if( c > 255) return 255;
+    if( c < 0) return 0;
+    return c;
+}
+
 void mutate(Genom& g)
 {
     int index = (int)( randf() * g.palette.size());
     QColor c = g.palette[index];
-    c.setRgb( (0.5 - randf()) * 10 + c.red(), (0.5 - randf()) * 10 + c.green(), (0.5 - randf()) * 10 + c.blue() );
+    c.setRgb( mutateColor( c.red()), mutateColor(c.green()), mutateColor(c.blue()) );
     g.palette[index] = c;
 }
 
-std::vector<QColor> optimizeColors( const std::map<QColor, int>& colors2int, int paletteSize )
+std::vector<QColor> KisDitherFilter::optimizeColors( const std::map<QColor, int>& colors2int, int paletteSize, int& pixelsProcessed )
 {
     // Sort the colors, with luck it will help the genetic algorithm to eliminate very bad palette early
     std::multimap<int, QColor> int2colors;
@@ -206,7 +213,7 @@ std::vector<QColor> optimizeColors( const std::map<QColor, int>& colors2int, int
     {
         kdDebug() << "Iteration : " << iter << endl;
         // Reproduction
-        int nbgenoms = 2 * genoms.size();
+        uint nbgenoms = 2 * genoms.size();
         std::vector<Genom>parents;
         for(std::multimap<double, Genom>::iterator it = genoms.begin(); it != genoms.end(); ++it)
         {
@@ -236,11 +243,12 @@ std::vector<QColor> optimizeColors( const std::map<QColor, int>& colors2int, int
             c2.computeError(colors2int);
             genoms.insert( std::multimap<double, Genom>::value_type( c1.error, c1) );
             genoms.insert( std::multimap<double, Genom>::value_type( c2.error, c2) );
+            kapp->processEvents();
         }
         // Kill the bad genoms
         std::multimap<double, Genom> newGenoms;
         std::multimap<double, Genom>::iterator it = genoms.begin();
-        for(int i = 0; i < genoms.size() / 2; ++i, ++it)
+        for(uint i = 0; i < genoms.size() / 2; ++i, ++it)
         {
             newGenoms.insert( *it );
         }
@@ -251,6 +259,7 @@ std::vector<QColor> optimizeColors( const std::map<QColor, int>& colors2int, int
             currentBest = genoms.begin()->first;
             iter2 = 0;
         }
+        setProgress(pixelsProcessed += 100);
     }
     
     kdDebug() << "Optimization is finished" << endl;
@@ -258,7 +267,7 @@ std::vector<QColor> optimizeColors( const std::map<QColor, int>& colors2int, int
     return genoms.begin()->second.palette;
 }
 
-void generateOptimizedPalette(quint8** colorPalette, int reduction, KisPaintDeviceSP src, const QRect& rect, int paletteSize)
+void KisDitherFilter::generateOptimizedPalette(quint8** colorPalette, int reduction, KisPaintDeviceSP src, const QRect& rect, int paletteSize, int& pixelsProcessed )
 {
     KisColorSpace * cs = src->colorSpace();
     Q_INT32 pixelSize = cs->pixelSize();
@@ -271,6 +280,7 @@ void generateOptimizedPalette(quint8** colorPalette, int reduction, KisPaintDevi
         cs->toQColor( rectIt.oldRawData(), &c, (KisProfile*)0 );
         c.setRgb( c.red() >> reduction, c.green() >> reduction, c.blue() >> reduction );
         colors2int[ c ] += 1;
+        setProgress(++pixelsProcessed);
         ++rectIt;
     }
     std::map<QColor, int> colors2intBis;
@@ -281,7 +291,7 @@ void generateOptimizedPalette(quint8** colorPalette, int reduction, KisPaintDevi
         c.setRgb( c.red() << reduction, c.green() << reduction, c.blue() << reduction );
         colors2intBis[c] = it->second;
     }
-    std::vector<QColor> colors = optimizeColors( colors2intBis, paletteSize );
+    std::vector<QColor> colors = optimizeColors( colors2intBis, paletteSize, pixelsProcessed );
     
     for(int i = 0; i < paletteSize; i++)
     {
@@ -301,6 +311,8 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
     KisColorSpace * cs = src->colorSpace();
     Q_INT32 pixelSize = cs->pixelSize();
     
+    int pixelsProcessed = 0;
+    
     QVariant value;
     int paletteSize = 16;
     if (config->getProperty("paletteSize", value))
@@ -318,22 +330,26 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
         default:
         case 0:
         {
-           generateOptimizedPalette(colorPalette, 4, src, rect, paletteSize);
+           setProgressTotalSteps(2 * rect.width() * rect.height() + 10000);
+           generateOptimizedPalette(colorPalette, 4, src, rect, paletteSize, pixelsProcessed);
            break;
         }
         case 1:
         {
-           generateOptimizedPalette(colorPalette, 2, src, rect, paletteSize);
+           setProgressTotalSteps(2 * rect.width() * rect.height() + 10000);
+           generateOptimizedPalette(colorPalette, 2, src, rect, paletteSize, pixelsProcessed);
            break;
         }
         case 2:
         {
-           generateOptimizedPalette(colorPalette, 0, src, rect, paletteSize);
+           setProgressTotalSteps(2 * rect.width() * rect.height() + 10000);
+           generateOptimizedPalette(colorPalette, 0, src, rect, paletteSize, pixelsProcessed);
            break;
         }
         case 3:
         {
-            kdDebug() << "Best colors (4bit)" << endl;
+            kdDebug() << "Most colors (8bit)" << endl;
+            setProgressTotalSteps(2 * rect.width() * rect.height());
             QColor c;
             std::map<QColor, int> colors2int;
             KisRectIteratorPixel rectIt = src->createRectIterator(rect.x(), rect.y(), rect.width(), rect.height(), false);
@@ -341,6 +357,7 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
             {
                 cs->toQColor( rectIt.oldRawData(), &c, (KisProfile*)0 );
                 colors2int[ c ] += 1;
+                setProgress(++pixelsProcessed);
                 ++rectIt;
             }
             std::multimap<int, QColor> int2colors;
@@ -362,6 +379,7 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
         }
         case 4:
         {
+            setProgressTotalSteps(2 * rect.width() * rect.height());
             kdDebug() << "Most colors (4bit)" << endl;
             QColor c;
             std::map<QColor, int> colors2int;
@@ -371,6 +389,7 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
                 cs->toQColor( rectIt.oldRawData(), &c, (KisProfile*)0 );
                 c.setRgb( c.red() >> 4, c.green() >> 4, c.blue() >> 4 );
                 colors2int[ c ] += 1;
+                setProgress(++pixelsProcessed);
                 ++rectIt;
             }
             std::multimap<int, QColor> int2colors;
@@ -393,6 +412,7 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
         }
         case 5:
             kdDebug() << "Random" << endl;
+            setProgressTotalSteps(rect.width() * rect.height());
             for(int i = 0; i < paletteSize; i++)
             {
                 QColor c( (int)(rand() * 255.0 / RAND_MAX), (int)(rand() * 255.0 / RAND_MAX), (int)(rand() * 255.0 / RAND_MAX) );
@@ -406,8 +426,6 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
     // Apply palette
     KisHLineIteratorPixel dstIt = dst->createHLineIterator(rect.x(), rect.y(), rect.width(), true );
     KisHLineIteratorPixel srcIt = src->createHLineIterator(rect.x(), rect.y(), rect.width(), false);
-    int pixelsProcessed = 0;
-    setProgressTotalSteps(rect.width() * rect.height());
     
     for(int y = 0; y < rect.height(); y++)
     {

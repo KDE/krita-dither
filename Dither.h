@@ -27,6 +27,9 @@
 #include <kparts/plugin.h>
 #include <kis_filter.h>
 
+typedef Q_UINT8 quint8;
+
+
 class DitherFilterConfig;
 
 class KritaDither : public KParts::Plugin
@@ -51,7 +54,9 @@ public:
     virtual KisFilterConfigWidget * createConfigurationWidget(QWidget* parent, KisPaintDeviceSP dev);
     virtual KisFilterConfiguration* configuration(QWidget*);
     virtual KisFilterConfiguration* configuration();
-
+private:
+    std::vector<QColor> optimizeColors( const std::map<QColor, int>& colors2int, int paletteSize, int& pixelsProcessed );
+    void generateOptimizedPalette(quint8** colorPalette, int reduction, KisPaintDeviceSP src, const QRect& rect, int paletteSize, int& pixelsProcessed );
 };
 
 #endif
