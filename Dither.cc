@@ -129,14 +129,18 @@ double ns(double a, double b)
     return c*c;
 }
 
+struct ColorInt {
+    int red, green, blue, count;
+};
+
 struct Genom {
     std::vector<QColor> palette;
     double error;
-    void computeError( const std::map<QColor, int>& colors2int )
+    void computeError( const std::vector<ColorInt>& colorsInt )
     {
         this->error = 0.0;
-        for(std::map<QColor, int>::const_iterator it = colors2int.begin();
-            it != colors2int.end(); ++it)
+        for(std::vector<ColorInt>::const_iterator it = colorsInt.begin();
+            it != colorsInt.end(); ++it)
         {
             double bestScore = -1.0;
             // Find the best color in the palette
@@ -144,15 +148,15 @@ struct Genom {
                  it2 != palette.end(); ++it2)
             {
                 double score = ns(
-                                  it->first.red(), it2->red())
-                                + ns(it->first.green(), it2->green() )
-                                + ns(it->first.blue(), it2->blue() );
+                                  it->red, it2->red())
+                                + ns(it->green, it2->green() )
+                                + ns(it->blue, it2->blue() );
                 if(score < bestScore or bestScore < 0.0)
                 {
                     bestScore = score;
                 }
             }
-            this->error += sqrt(bestScore) * it->second;
+            this->error += sqrt(bestScore) * it->count;
         }
     }
 };
@@ -180,6 +184,17 @@ void mutate(Genom& g)
 
 std::vector<QColor> KisDitherFilter::optimizeColors( const std::map<QColor, int>& colors2int, int paletteSize, int& pixelsProcessed )
 {
+    std::vector<ColorInt> colorsInt;
+    for(std::map<QColor, int>::const_iterator it = colors2int.begin();
+        it != colors2int.end(); ++it)
+    {
+        ColorInt ci;
+        ci.red = it->first.red();
+        ci.green = it->first.green();
+        ci.blue = it->first.blue();
+        ci.count = it->second;
+        colorsInt.push_back( ci );
+    }
     // Sort the colors, with luck it will help the genetic algorithm to eliminate very bad palette early
     std::multimap<int, QColor> int2colors;
     for( std::map<QColor, int>::const_iterator it = colors2int.begin();
@@ -199,7 +214,7 @@ std::vector<QColor> KisDitherFilter::optimizeColors( const std::map<QColor, int>
             g.palette.push_back( it->second );
             if( it != int2colors.end()) ++it;
         }
-        g.computeError(colors2int);
+        g.computeError(colorsInt);
         genoms.insert( std::multimap<double, Genom>::value_type( g.error, g) );
         kdDebug() << g.error << " " << genoms.size() << " out of " << (colors2int.size() / paletteSize) << endl;
     }
@@ -239,8 +254,8 @@ std::vector<QColor> KisDitherFilter::optimizeColors( const std::map<QColor, int>
             if( rand() >( RAND_MAX)/2) mutate(c1);
             if( rand() <( RAND_MAX)/2) mutate(c2);
                 
-            c1.computeError(colors2int);
-            c2.computeError(colors2int);
+            c1.computeError(colorsInt);
+            c2.computeError(colorsInt);
             genoms.insert( std::multimap<double, Genom>::value_type( c1.error, c1) );
             genoms.insert( std::multimap<double, Genom>::value_type( c2.error, c2) );
             kapp->processEvents();
@@ -337,16 +352,10 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
         case 1:
         {
            setProgressTotalSteps(2 * rect.width() * rect.height() + 10000);
-           generateOptimizedPalette(colorPalette, 2, src, rect, paletteSize, pixelsProcessed);
+           generateOptimizedPalette(colorPalette, 3, src, rect, paletteSize, pixelsProcessed);
            break;
         }
         case 2:
-        {
-           setProgressTotalSteps(2 * rect.width() * rect.height() + 10000);
-           generateOptimizedPalette(colorPalette, 0, src, rect, paletteSize, pixelsProcessed);
-           break;
-        }
-        case 3:
         {
             kdDebug() << "Most colors (8bit)" << endl;
             setProgressTotalSteps(2 * rect.width() * rect.height());
@@ -377,7 +386,7 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
             paletteSize = realPaletteSize;
             break;
         }
-        case 4:
+        case 3:
         {
             setProgressTotalSteps(2 * rect.width() * rect.height());
             kdDebug() << "Most colors (4bit)" << endl;
@@ -410,7 +419,7 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
             paletteSize = realPaletteSize;
             break;
         }
-        case 5:
+        case 4:
             kdDebug() << "Random" << endl;
             setProgressTotalSteps(rect.width() * rect.height());
             for(int i = 0; i < paletteSize; i++)
