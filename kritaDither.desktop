@@ -18,6 +18,7 @@ Name[tr]=Titreme Süzgeci
 Name[uk]=Фільтр тонування
 Name[x-test]=xxDither Filterxx
 Comment=Dither an image.
+Comment[es]=Saltar una imagen.
 Comment[et]=Pildi pseudotoonimine.
 Comment[fr]=Tramer une image
 Comment[pt]=Tornar as cores de uma imagem discretas.
