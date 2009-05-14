@@ -24,6 +24,7 @@ Comment[fr]=Tramer une image
 Comment[pt]=Tornar as cores de uma imagem discretas.
 Comment[pt_BR]=Tornar as cores de uma imagem discretas.
 Comment[sv]=Använd ett gitterfilter på en bild.
+Comment[tr]=Bir resmi soldur.
 Comment[uk]=Зібрати зображення.
 Comment[x-test]=xxDither an image.xx
 ServiceTypes=Krita/Filter
