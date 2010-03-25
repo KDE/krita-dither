@@ -25,21 +25,22 @@
 #include <kapplication.h>
 #include <klocale.h>
 #include <kiconloader.h>
-#include <kinstance.h>
 #include <kmessagebox.h>
 #include <kstandarddirs.h>
-#include <ktempfile.h>
 #include <kdebug.h>
 #include <kgenericfactory.h>
 
+#include <KoUpdater.h>
+
 #include <kis_multi_double_filter_widget.h>
 #include <kis_iterators_pixel.h>
-#include <kis_progress_display_interface.h>
 #include <kis_filter_registry.h>
 #include <kis_global.h>
 #include <kis_transaction.h>
 #include <kis_types.h>
 #include <kis_selection.h>
+#include <kis_filter_configuration.h>
+#include <kis_processing_information.h>
 
 #include <kis_convolution_painter.h>
 
@@ -50,27 +51,15 @@
 #include <qcombobox.h>
 
 #include "DitherConfigurationWidget.h"
-#include "DitherConfigurationBaseWidget.h"
+#include "ui_DitherConfigurationBaseWidget.h"
 
-typedef KGenericFactory<KritaDither> KritaDitherFactory;
-K_EXPORT_COMPONENT_FACTORY( kritaDither, KritaDitherFactory( "krita" ) )
+K_PLUGIN_FACTORY(KritaDitherFactory, registerPlugin<KritaDither>();)
+K_EXPORT_PLUGIN(KritaDitherFactory("krita"))
 
-KritaDither::KritaDither(QObject *parent, const char *name, const QStringList &)
-: KParts::Plugin(parent, name)
+KritaDither::KritaDither(QObject *parent, const QVariantList &)
+        : QObject(parent)
 {
-    setInstance(KritaDitherFactory::instance());
-
-    kdDebug(41006) << "Dither filter plugin. Class: "
-    << className()
-    << ", Parent: "
-    << parent -> className()
-    << "\n";
-
-    if(parent->inherits("KisFilterRegistry"))
-    {
-        KisFilterRegistry * manager = dynamic_cast<KisFilterRegistry *>(parent);
-        manager->add(new KisDitherFilter());
-    }
+    KisFilterRegistry::instance()->add(new KisDitherFilter());
 }
 
 KritaDither::~KritaDither()
@@ -78,7 +67,7 @@ KritaDither::~KritaDither()
 }
 
 KisDitherFilter::KisDitherFilter() 
-    : KisFilter(id(), "dither", i18n("&Dither"))
+    : KisFilter(id(), categoryColors(), i18n("&Dither"))
 {
 }
 
@@ -90,26 +79,11 @@ KisFilterConfiguration* KisDitherFilter::configuration()
     return config;
 };
 
-KisFilterConfigWidget * KisDitherFilter::createConfigurationWidget(QWidget* parent, KisPaintDeviceSP /*dev*/)
+KisConfigWidget* KisDitherFilter::createConfigurationWidget(QWidget * parent, const KisPaintDeviceSP /*dev*/, const KisImageWSP /*image*/) const
 {
-    DitherConfigurationWidget* w = new DitherConfigurationWidget(parent, "");
+    DitherConfigurationWidget* w = new DitherConfigurationWidget(parent);
     Q_CHECK_PTR(w);
     return w;
-}
-
-KisFilterConfiguration* KisDitherFilter::configuration(QWidget* nwidget)
-{
-    DitherConfigurationWidget* widget = (DitherConfigurationWidget*) nwidget;
-    if( widget == 0 )
-    {
-        return configuration();
-    } else {
-        DitherConfigurationBaseWidget* baseWidget = widget->widget();
-        KisFilterConfiguration* config = new KisFilterConfiguration(id().id(),1);
-        config->setProperty("paletteSize", baseWidget->paletteSize->value() );
-        config->setProperty("paletteType", baseWidget->paletteType->currentItem() );
-        return config;
-    }
 }
 
 bool operator<(const QColor& c1, const QColor& c2)
@@ -182,7 +156,7 @@ void mutate(Genom& g)
     g.palette[index] = c;
 }
 
-std::vector<QColor> KisDitherFilter::optimizeColors( const std::map<QColor, int>& colors2int, int paletteSize, int& pixelsProcessed )
+std::vector<QColor> KisDitherFilter::optimizeColors( const std::map<QColor, int>& colors2int, int paletteSize, int& pixelsProcessed, KoUpdater* progressUpdater ) const
 {
     std::vector<ColorInt> colorsInt;
     for(std::map<QColor, int>::const_iterator it = colors2int.begin();
@@ -274,7 +248,9 @@ std::vector<QColor> KisDitherFilter::optimizeColors( const std::map<QColor, int>
             currentBest = genoms.begin()->first;
             iter2 = 0;
         }
-        setProgress(pixelsProcessed += 100);
+        if (progressUpdater) {
+            progressUpdater->setValue(pixelsProcessed += 100);
+        }
     }
     
     kdDebug() << "Optimization is finished" << endl;
@@ -282,20 +258,20 @@ std::vector<QColor> KisDitherFilter::optimizeColors( const std::map<QColor, int>
     return genoms.begin()->second.palette;
 }
 
-void KisDitherFilter::generateOptimizedPalette(quint8** colorPalette, int reduction, KisPaintDeviceSP src, const QRect& rect, int paletteSize, int& pixelsProcessed )
+void KisDitherFilter::generateOptimizedPalette(quint8** colorPalette, int reduction, KisPaintDeviceSP src, const QRect& rect, int paletteSize, int& pixelsProcessed, KoUpdater* progressUpdater ) const
 {
-    KisColorSpace * cs = src->colorSpace();
-    Q_INT32 pixelSize = cs->pixelSize();
+    KoColorSpace * cs = src->colorSpace();
+    qint32 pixelSize = cs->pixelSize();
     kdDebug() << "Optimization " << reduction << endl;
     QColor c;
     std::map<QColor, int> colors2int;
     KisRectIteratorPixel rectIt = src->createRectIterator(rect.x(), rect.y(), rect.width(), rect.height(), false);
     while(not rectIt.isDone())
     {
-        cs->toQColor( rectIt.oldRawData(), &c, (KisProfile*)0 );
+        cs->toQColor( rectIt.oldRawData(), &c, 0 );
         c.setRgb( c.red() >> reduction, c.green() >> reduction, c.blue() >> reduction );
         colors2int[ c ] += 1;
-        setProgress(++pixelsProcessed);
+        progressUpdater->setValue(++pixelsProcessed);
         ++rectIt;
     }
     std::map<QColor, int> colors2intBis;
@@ -306,7 +282,7 @@ void KisDitherFilter::generateOptimizedPalette(quint8** colorPalette, int reduct
         c.setRgb( c.red() << reduction, c.green() << reduction, c.blue() << reduction );
         colors2intBis[c] = it->second;
     }
-    std::vector<QColor> colors = optimizeColors( colors2intBis, paletteSize, pixelsProcessed );
+    std::vector<QColor> colors = optimizeColors( colors2intBis, paletteSize, pixelsProcessed, progressUpdater );
     
     for(int i = 0; i < paletteSize; i++)
     {
@@ -316,15 +292,21 @@ void KisDitherFilter::generateOptimizedPalette(quint8** colorPalette, int reduct
     }
 }
 
-void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst, 
-                                   KisFilterConfiguration* config, const QRect& rect ) 
+void KisDitherFilter::process(KisConstProcessingInformation srcInfo,
+                         KisProcessingInformation dstInfo,
+                         const QSize& size,
+                         const KisFilterConfiguration* config,
+                         KoUpdater* progressUpdater
+                        ) const
 {
+    KisPaintDeviceSP src = srcInfo.paintDevice();
+    KisPaintDeviceSP dst = dstInfo.paintDevice();
     Q_ASSERT(src != 0);
     Q_ASSERT(dst != 0);
     
     // Dither analysis
-    KisColorSpace * cs = src->colorSpace();
-    Q_INT32 pixelSize = cs->pixelSize();
+    KoColorSpace * cs = src->colorSpace();
+    qint32 pixelSize = cs->pixelSize();
     
     int pixelsProcessed = 0;
     
@@ -345,28 +327,36 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
         default:
         case 0:
         {
-           setProgressTotalSteps(2 * rect.width() * rect.height() + 10000);
-           generateOptimizedPalette(colorPalette, 4, src, rect, paletteSize, pixelsProcessed);
+            if (progressUpdater) {
+                progressUpdater->setRange(0, size.width() * size.height());
+            }
+           generateOptimizedPalette(colorPalette, 4, src, QRect(srcInfo.topLeft(), size), paletteSize, pixelsProcessed, progressUpdater);
            break;
         }
         case 1:
         {
-           setProgressTotalSteps(2 * rect.width() * rect.height() + 10000);
-           generateOptimizedPalette(colorPalette, 3, src, rect, paletteSize, pixelsProcessed);
+            if (progressUpdater) {
+                progressUpdater->setRange(0, size.width() * size.height());
+            }
+           generateOptimizedPalette(colorPalette, 3, src, QRect(srcInfo.topLeft(), size), paletteSize, pixelsProcessed, progressUpdater);
            break;
         }
         case 2:
         {
             kdDebug() << "Most colors (8bit)" << endl;
-            setProgressTotalSteps(2 * rect.width() * rect.height());
+            if (progressUpdater) {
+                progressUpdater->setRange(0, size.width() * size.height());
+            }
             QColor c;
             std::map<QColor, int> colors2int;
-            KisRectIteratorPixel rectIt = src->createRectIterator(rect.x(), rect.y(), rect.width(), rect.height(), false);
+            KisRectIteratorPixel rectIt = src->createRectIterator(srcInfo.topLeft().x(), srcInfo.topLeft().y(), size.width(), size.height(), false);
             while(not rectIt.isDone())
             {
-                cs->toQColor( rectIt.oldRawData(), &c, (KisProfile*)0 );
+                cs->toQColor( rectIt.oldRawData(), &c, 0 );
                 colors2int[ c ] += 1;
-                setProgress(++pixelsProcessed);
+                if (progressUpdater) {
+                    progressUpdater->setValue(++pixelsProcessed);
+                }
                 ++rectIt;
             }
             std::multimap<int, QColor> int2colors;
@@ -388,17 +378,21 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
         }
         case 3:
         {
-            setProgressTotalSteps(2 * rect.width() * rect.height());
+            if (progressUpdater) {
+                progressUpdater->setRange(0, size.width() * size.height());
+            }
             kdDebug() << "Most colors (4bit)" << endl;
             QColor c;
             std::map<QColor, int> colors2int;
-            KisRectIteratorPixel rectIt = src->createRectIterator(rect.x(), rect.y(), rect.width(), rect.height(), false);
+            KisRectIteratorPixel rectIt = src->createRectIterator(srcInfo.topLeft().x(), srcInfo.topLeft().y(), size.width(), size.height(), false);
             while(not rectIt.isDone())
             {
-                cs->toQColor( rectIt.oldRawData(), &c, (KisProfile*)0 );
+                cs->toQColor( rectIt.oldRawData(), &c, 0 );
                 c.setRgb( c.red() >> 4, c.green() >> 4, c.blue() >> 4 );
                 colors2int[ c ] += 1;
-                setProgress(++pixelsProcessed);
+                if (progressUpdater) {
+                    progressUpdater->setValue(++pixelsProcessed);
+                }
                 ++rectIt;
             }
             std::multimap<int, QColor> int2colors;
@@ -421,7 +415,10 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
         }
         case 4:
             kdDebug() << "Random" << endl;
-            setProgressTotalSteps(rect.width() * rect.height());
+            
+            if (progressUpdater) {
+                progressUpdater->setRange(0, size.width() * size.height());
+            }
             for(int i = 0; i < paletteSize; i++)
             {
                 QColor c( (int)(rand() * 255.0 / RAND_MAX), (int)(rand() * 255.0 / RAND_MAX), (int)(rand() * 255.0 / RAND_MAX) );
@@ -433,10 +430,10 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
     }
     
     // Apply palette
-    KisHLineIteratorPixel dstIt = dst->createHLineIterator(rect.x(), rect.y(), rect.width(), true );
-    KisHLineIteratorPixel srcIt = src->createHLineIterator(rect.x(), rect.y(), rect.width(), false);
+    KisHLineIteratorPixel dstIt = dst->createHLineIterator(dstInfo.topLeft().x(), dstInfo.topLeft().y(), size.width());
+    KisHLineConstIteratorPixel srcIt = src->createHLineConstIterator(srcInfo.topLeft().x(), srcInfo.topLeft().y(), size.width());
     
-    for(int y = 0; y < rect.height(); y++)
+    for(int y = 0; y < size.height(); y++)
     {
         while( not srcIt.isDone() )
         {
@@ -468,7 +465,9 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
                 Q_ASSERT(bestColor);
                 memcpy( dstIt.rawData(), bestColor, pixelSize);
             }
-            setProgress(++pixelsProcessed);
+            if (progressUpdater) {
+                progressUpdater->setValue(++pixelsProcessed);
+            }
             ++srcIt;
             ++dstIt;
         }
@@ -482,5 +481,4 @@ void KisDitherFilter::process(KisPaintDeviceSP src, KisPaintDeviceSP dst,
       delete[] colorPalette[i];
     }
     delete[] colorPalette;
-    setProgressDone(); // Must be called even if you don't really support progression
 }

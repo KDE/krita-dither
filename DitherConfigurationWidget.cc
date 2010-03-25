@@ -21,17 +21,17 @@
 
 #include <qlayout.h>
 #include <qcombobox.h>
-#include <klistview.h>
 #include <knuminput.h>
 #include <klocale.h>
+#include <kis_filter_configuration.h>
 
-#include "DitherConfigurationBaseWidget.h"
+#include "ui_DitherConfigurationBaseWidget.h"
+#include "Dither.h"
 
-DitherConfigurationWidget::DitherConfigurationWidget(QWidget * parent, const char * name) : KisFilterConfigWidget ( parent, name )
+DitherConfigurationWidget::DitherConfigurationWidget(QWidget * parent) : KisConfigWidget ( parent )
 {
-    QGridLayout *widgetLayout = new QGridLayout(this, 1, 1);
-    m_widget = new DitherConfigurationBaseWidget(this);
-    widgetLayout -> addWidget(m_widget,0,0);
+    m_widget = new Ui_DitherConfigurationBaseWidget;
+    m_widget->setupUi(this);
     connect(m_widget->paletteType, SIGNAL(activated(int)), SIGNAL(sigPleaseUpdatePreview()));
     connect(m_widget->paletteSize, SIGNAL(valueChanged(int)), SIGNAL(sigPleaseUpdatePreview()));
 }
@@ -41,17 +41,25 @@ DitherConfigurationWidget::~DitherConfigurationWidget()
 {
 }
 
-void DitherConfigurationWidget::setConfiguration(KisFilterConfiguration* config)
+void DitherConfigurationWidget::setConfiguration(const KisPropertiesConfiguration* config)
 {
     QVariant value;
     if (config->getProperty("paletteSize", value))
     {
-        widget()->paletteSize->setValue(value.toInt(0));
+        m_widget->paletteSize->setValue(value.toInt(0));
     }
     if (config->getProperty("paletteType", value))
     {
-        widget()->paletteType->setCurrentItem(value.toInt(0));
+        m_widget->paletteType->setCurrentIndex(value.toInt(0));
     }
+}
+
+KisPropertiesConfiguration* DitherConfigurationWidget::configuration() const
+{
+    KisFilterConfiguration* config = new KisFilterConfiguration(KisDitherFilter::id().id(),1);
+    config->setProperty("paletteSize", m_widget->paletteSize->value() );
+    config->setProperty("paletteType", m_widget->paletteType->currentIndex() );
+    return config;
 }
 
 #include "DitherConfigurationWidget.moc"

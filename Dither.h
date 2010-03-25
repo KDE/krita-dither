@@ -27,15 +27,12 @@
 #include <kparts/plugin.h>
 #include <kis_filter.h>
 
-typedef Q_UINT8 quint8;
-
-
 class DitherFilterConfig;
 
-class KritaDither : public KParts::Plugin
+class KritaDither : public QObject
 {
 public:
-    KritaDither(QObject *parent, const char *name, const QStringList &);
+    KritaDither(QObject *parent, const QVariantList &);
     virtual ~KritaDither();
 };
 
@@ -44,19 +41,24 @@ class KisDitherFilter : public KisFilter
 public:
     KisDitherFilter();
 public:
-    virtual void process(KisPaintDeviceSP src, KisPaintDeviceSP dst, KisFilterConfiguration*, const QRect&);
+    using KisFilter::process;
+    virtual void process(KisConstProcessingInformation src,
+                         KisProcessingInformation dst,
+                         const QSize& size,
+                         const KisFilterConfiguration* config,
+                         KoUpdater* progressUpdater
+                        ) const;
     virtual ColorSpaceIndependence colorSpaceIndependence() { return FULLY_INDEPENDENT; };
-    static inline KisID id() { return KisID("dither", i18n("Dither")); };
+    static inline KoID id() { return KoID("dither", i18n("Dither")); };
     virtual bool supportsPainting() { return false; }
     virtual bool supportsPreview() { return false; }
     virtual bool supportsIncrementalPainting() { return false; }
     virtual bool supportsAdjustmentLayers() { return true; }
-    virtual KisFilterConfigWidget * createConfigurationWidget(QWidget* parent, KisPaintDeviceSP dev);
-    virtual KisFilterConfiguration* configuration(QWidget*);
+    virtual KisConfigWidget * createConfigurationWidget(QWidget * parent, const KisPaintDeviceSP dev, const KisImageWSP image = 0) const;
     virtual KisFilterConfiguration* configuration();
 private:
-    std::vector<QColor> optimizeColors( const std::map<QColor, int>& colors2int, int paletteSize, int& pixelsProcessed );
-    void generateOptimizedPalette(quint8** colorPalette, int reduction, KisPaintDeviceSP src, const QRect& rect, int paletteSize, int& pixelsProcessed );
+    std::vector<QColor> optimizeColors( const std::map<QColor, int>& colors2int, int paletteSize, int& pixelsProcessed, KoUpdater* progressUpdater ) const;
+    void generateOptimizedPalette(quint8** colorPalette, int reduction, KisPaintDeviceSP src, const QRect& rect, int paletteSize, int& pixelsProcessed, KoUpdater* progressUpdater ) const;
 };
 
 #endif

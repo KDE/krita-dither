@@ -24,27 +24,25 @@
 #define LCMS_HEADER <lcms.h>
 // TODO: remove it !
 
-#include <kis_filter_config_widget.h>
+#include <kis_config_widget.h>
 
 class KisFilter;
-class DitherConfigurationBaseWidget;
+class Ui_DitherConfigurationBaseWidget;
 class QListViewItem;
 
 /**
         @author Cyrille Berger <cberger@cberger.net>
 */
-class DitherConfigurationWidget : public KisFilterConfigWidget
+class DitherConfigurationWidget : public KisConfigWidget
 {
     Q_OBJECT
     public:
-        DitherConfigurationWidget(QWidget * parent, const char * name);
+        DitherConfigurationWidget(QWidget* parent);
         ~DitherConfigurationWidget();
-        virtual void setConfiguration(KisFilterConfiguration*);
-        inline DitherConfigurationBaseWidget* widget() { return m_widget; }
-    protected slots:
-        void filterChanged(QListViewItem * );
+        virtual void setConfiguration(const KisPropertiesConfiguration * config);
+        virtual KisPropertiesConfiguration* configuration() const;
     private:
-        DitherConfigurationBaseWidget* m_widget;
+        Ui_DitherConfigurationBaseWidget* m_widget;
 };
 
 #endif
